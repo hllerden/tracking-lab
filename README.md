@@ -188,3 +188,11 @@ The versioned output system (`output/v1.0.x/`) lets you track progress across co
 - Hungarian algorithm is O(n³) so if you're tracking hundreds of objects per frame you'll feel it
 
 Current version: 1.0.10
+
+## Author
+---
+### ***Halil Erden***
+
+halilxerden@gmail.com 
+
+**Embedded Software Engineer** | C++ / Qt / Linux / Yocto / Halı / Kilim / Time travel
