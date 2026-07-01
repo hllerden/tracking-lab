@@ -12,21 +12,27 @@ It runs YOLO models for detection and handles the tracking side with a custom Ka
 
 ### Detections
 
-<video src="https://github.com/hllerden/tracking-lab/raw/refs/heads/master/readme_tracking_detections.mp4" width="540" controls></video>
+[![Detections demo](readme_tracking_detections.png)](https://github.com/hllerden/tracking-lab/raw/refs/heads/master/readme_tracking_detections.mp4)
 
-[Watch raw video](https://github.com/hllerden/tracking-lab/raw/refs/heads/master/readme_tracking_detections.mp4)
+[Watch video](https://github.com/hllerden/tracking-lab/raw/refs/heads/master/readme_tracking_detections.mp4)
 
 ### Full Debug
 
-<video src="https://github.com/hllerden/tracking-lab/raw/refs/heads/master/readme_tracking_full_debug.mp4" width="540" controls></video>
+[![Full debug demo](readme_tracking_full_debug.png)](https://github.com/hllerden/tracking-lab/raw/refs/heads/master/readme_tracking_full_debug.mp4)
 
-[Watch raw video](https://github.com/hllerden/tracking-lab/raw/refs/heads/master/readme_tracking_full_debug.mp4)
+[Watch video](https://github.com/hllerden/tracking-lab/raw/refs/heads/master/readme_tracking_full_debug.mp4)
 
 ### Output
 
-<video src="https://github.com/hllerden/tracking-lab/raw/refs/heads/master/readme_tracking_tracker_output.mp4" width="540" controls></video>
+[![Output demo](readme_tracking_tracker_output.png)](https://github.com/hllerden/tracking-lab/raw/refs/heads/master/readme_tracking_tracker_output.mp4)
 
-[Watch raw video](https://github.com/hllerden/tracking-lab/raw/refs/heads/master/readme_tracking_tracker_output.mp4)
+[Watch video](https://github.com/hllerden/tracking-lab/raw/refs/heads/master/readme_tracking_tracker_output.mp4)
+
+### Combined
+
+[![Combined demo](readme_tracking.png)](https://github.com/hllerden/tracking-lab/raw/refs/heads/master/readme_tracking.mp4)
+
+[Watch video](https://github.com/hllerden/tracking-lab/raw/refs/heads/master/readme_tracking.mp4)
 
 ---
 
