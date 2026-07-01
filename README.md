@@ -1,4 +1,6 @@
-# opencv-yolo tracker
+# tracking-lab
+
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 A C++ real-time object detection and multi-object tracking system. Started this as a learning project to understand how tracking pipelines actually work under the hood, ended up building something I actually use for benchmarking and testing new ideas.
 
@@ -137,7 +139,7 @@ Honest take: the difference on MOT17-04 is tiny. This sequence is a static camer
 ## Project Structure
 
 ```
-opencv-yolo/
+tracking-lab/
 ├── trackers/
 │   ├── kalman_iou/          # main tracker implementation
 │   └── reid_extractor.*     # ReID feature extraction
