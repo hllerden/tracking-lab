@@ -1,0 +1,15 @@
+# TrackEval Comparison Tool Requirements
+
+# Core dependencies
+pandas>=1.3.0
+
+# Visualization (optional but recommended)
+matplotlib>=3.3.0
+seaborn>=0.11.0
+
+# Rich terminal output (optional but recommended)
+rich>=10.0.0
+
+# Additional optional dependencies
+# reportlab>=3.6.0  # For PDF report generation (not implemented yet)
+# plotly>=5.0.0      # For interactive HTML charts (future feature)

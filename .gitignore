@@ -1,0 +1,107 @@
+# Build artifacts
+build/
+*.o
+*.obj
+*.slo
+*.lo
+*.a
+*.so
+*.so.*
+*.dll
+*.dylib
+*.exe
+*.out
+*.app
+*.gch
+*.pch
+*.lib
+*.la
+*.lai
+*.mod
+*.smod
+*.elf
+*.ilk
+*.map
+*.exp
+*.i*86
+*.x86_64
+*.hex
+*.dSYM/
+*.su
+*.idb
+*.pdb
+*.d
+*.raw
+
+# Kernel module build
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+Mkfile.old
+dkms.conf
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+Testing/
+_deps/
+compile_commands.json
+
+# Qt Creator
+CMakeLists.txt.user
+CMakeLists.txt.user.*
+*.pro.user
+*.pro.user.*
+*.qbs.user
+*.qbs.user.*
+*.qmlproject.user
+*.qmlproject.user.*
+*creator.user*
+*_qmlcache.qrc
+/.qmake.cache
+/.qmake.stash
+*.autosave
+*~
+
+# YOLO / ML model files (large binaries)
+*.onnx
+*.pt
+*.weights
+*.engine
+*.tflite
+models/
+
+# Datasets / large data (accessed via symlink)
+MOT17-Data/
+
+# Output tracking results (generated files, keep scripts and docs)
+output/v*/
+output/reports/
+output/comparison/
+output/*.txt
+output/*.log
+
+# IDE / editor
+.vscode/
+.idea/
+
+# Claude / AI assistant
+.claude/
+.codex/
+CLAUDE.md
+
+# Linux misc
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Python cache
+__pycache__/
+*.pyc
