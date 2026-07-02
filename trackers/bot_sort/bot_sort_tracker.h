@@ -124,29 +124,31 @@ private:
     // Predict all tracks, apply CMC warp to statePre, fill cmcPredictedBox
     std::vector<cv::Rect> predictAllAndApplyCMC(const cv::Mat& warp);
 
-    // Stage 1: match high-confidence detections to TRACKING tracks
-    std::vector<int> associateHighConf(const std::vector<cv::Rect>& dets,
-                                       const std::vector<float>& confs,
-                                       const std::vector<cv::Mat>& feats);
-
-    struct LowConfMatchResult {
+    struct AssociationResult {
         std::vector<int> unmatchedTrackIdx;
         std::vector<bool> matchedDetections;
     };
 
+    // Stage 1: match high-confidence detections to TRACKING tracks
+    AssociationResult associateHighConf(const std::vector<cv::Rect>& dets,
+                                        const std::vector<float>& confs,
+                                        const std::vector<cv::Mat>& feats);
+
     // Stage 2: match low-confidence detections to Stage-1-unmatched TRACKING tracks
-    LowConfMatchResult matchTrackingWithLowConf(const std::vector<int>& trackIdx,
-                                                const std::vector<cv::Rect>& dets,
-                                                const std::vector<float>& confs,
-                                                const std::vector<cv::Mat>& feats);
+    AssociationResult matchTrackingWithLowConf(const std::vector<int>& trackIdx,
+                                               const std::vector<cv::Rect>& dets,
+                                               const std::vector<float>& confs,
+                                               const std::vector<cv::Mat>& feats);
 
     void markTrackingTracksLost(const std::vector<int>& trackIdx);
     void ageExistingLostTracks(const std::vector<int>& lostIdx);
 
-    // Stage 2: revive LOST tracks with low-confidence detections
-    void reviveLostWithLowConf(const std::vector<cv::Rect>& dets,
-                               const std::vector<float>& confs,
-                               const std::vector<cv::Mat>& feats);
+    // Stage 3/4: revive LOST tracks with unmatched detections (IoU + ReID,
+    // ReID-only fallback gated by reidAppearanceThresh). Returns per-detection
+    // matched mask.
+    std::vector<bool> reviveLostTracks(const std::vector<cv::Rect>& dets,
+                                       const std::vector<float>& confs,
+                                       const std::vector<cv::Mat>& feats);
 
     // Initialize new tracks from unmatched high-confidence detections
     void initNewTracks(const std::vector<cv::Rect>& dets,

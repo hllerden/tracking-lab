@@ -70,26 +70,122 @@ fi
 
 V1_TESTS=$(jq -r '.successful_tests' "$V1_JSON")
 V2_TESTS=$(jq -r '.successful_tests' "$V2_JSON")
-V1_FPS=$(jq -r '.avg_fps' "$V1_JSON")
-V2_FPS=$(jq -r '.avg_fps' "$V2_JSON")
-V1_TIME=$(jq -r '.total_duration_seconds' "$V1_JSON")
-V2_TIME=$(jq -r '.total_duration_seconds' "$V2_JSON")
+V1_FAILED=$(jq -r '.failed_tests // 0' "$V1_JSON")
+V2_FAILED=$(jq -r '.failed_tests // 0' "$V2_JSON")
 
-FPS_DELTA=$(echo "$V2_FPS - $V1_FPS" | bc -l)
-FPS_PERCENT=$(echo "scale=2; ($FPS_DELTA / $V1_FPS) * 100" | bc -l)
-TIME_DELTA=$(echo "$V2_TIME - $V1_TIME" | bc -l)
-TIME_PERCENT=$(echo "scale=2; ($TIME_DELTA / $V1_TIME) * 100" | bc -l)
+summary_value() {
+    local json_file=$1
+    local field=$2
+
+    jq -r --arg field "$field" '
+        if .[$field] != null then
+            .[$field]
+        elif (.results // [] | length) > 0 then
+            [.results[] | select(.success == true)] as $results |
+            if ($results | length) == 0 then
+                0
+            elif $field == "avg_fps" then
+                (($results | map(.total_frames // 0) | add) * 1000) /
+                ($results | map(.processing_time_ms // 0) | add)
+            elif $field == "total_duration_seconds" then
+                ($results | map(.processing_time_ms // 0) | add) / 1000
+            else
+                0
+            end
+        else
+            0
+        end
+    ' "$json_file"
+}
+
+calc_delta() {
+    jq -n --argjson v1 "$1" --argjson v2 "$2" '$v2 - $v1'
+}
+
+calc_percent() {
+    jq -n --argjson base "$1" --argjson delta "$2" '
+        if $base == 0 then 0 else ($delta / $base) * 100 end
+    '
+}
+
+V1_FPS=$(summary_value "$V1_JSON" "avg_fps")
+V2_FPS=$(summary_value "$V2_JSON" "avg_fps")
+V1_TIME=$(summary_value "$V1_JSON" "total_duration_seconds")
+V2_TIME=$(summary_value "$V2_JSON" "total_duration_seconds")
+
+FPS_DELTA=$(calc_delta "$V1_FPS" "$V2_FPS")
+FPS_PERCENT=$(calc_percent "$V1_FPS" "$FPS_DELTA")
+TIME_DELTA=$(calc_delta "$V1_TIME" "$V2_TIME")
+TIME_PERCENT=$(calc_percent "$V1_TIME" "$TIME_DELTA")
 
 echo -e "${CYAN}Performance Comparison:${NC}\n"
 printf "┌─────────────────────┬──────────────┬──────────────┬──────────────┐\n"
 printf "│ %-19s │ %-12s │ %-12s │ %-12s │\n" "Metric" "$V1" "$V2" "Delta"
 printf "├─────────────────────┼──────────────┼──────────────┼──────────────┤\n"
 printf "│ %-19s │ %12s │ %12s │ %12s │\n" "Successful Tests" "$V1_TESTS" "$V2_TESTS" "$(($V2_TESTS - $V1_TESTS))"
+printf "│ %-19s │ %12s │ %12s │ %12s │\n" "Failed Tests" "$V1_FAILED" "$V2_FAILED" "$(($V2_FAILED - $V1_FAILED))"
 printf "│ %-19s │ %10.1f │ %10.1f │ %+10.1f │\n" "Avg FPS" "$V1_FPS" "$V2_FPS" "$FPS_DELTA"
 printf "│ %-19s │ %12s │ %12s │ %+11.1f%% │\n" "  (Improvement)" "" "" "$FPS_PERCENT"
 printf "│ %-19s │ %10.1fs │ %10.1fs │ %+10.1fs │\n" "Total Time" "$V1_TIME" "$V2_TIME" "$TIME_DELTA"
 printf "│ %-19s │ %12s │ %12s │ %+11.1f%% │\n" "  (Change)" "" "" "$TIME_PERCENT"
 printf "└─────────────────────┴──────────────┴──────────────┴──────────────┘\n"
 
-echo -e "\n${YELLOW}Note: For HOTA/MOTA/IDF1 metrics, use:${NC}"
-echo -e "  python3 -m scripts.compare_versions_minimal $V1 $V2 --base-dir output/reports --groups primary detection counts --html --json --output output/comparison\n"
+if jq -e '(.results // []) | length > 0' "$V1_JSON" > /dev/null && \
+   jq -e '(.results // []) | length > 0' "$V2_JSON" > /dev/null; then
+    declare -A V1_GROUP_FPS V2_GROUP_FPS V1_GROUP_TIME V2_GROUP_TIME V1_GROUP_TRACKS V2_GROUP_TRACKS
+
+    load_groups() {
+        local json_file=$1
+        local prefix=$2
+
+        while IFS=$'\t' read -r name fps time tracks; do
+            eval "${prefix}_GROUP_FPS[\"\$name\"]=\"\$fps\""
+            eval "${prefix}_GROUP_TIME[\"\$name\"]=\"\$time\""
+            eval "${prefix}_GROUP_TRACKS[\"\$name\"]=\"\$tracks\""
+        done < <(jq -r '
+            [.results[] | select(.success == true)]
+            | group_by((.tracker // "unknown") + "|" + (.reid // "unknown"))
+            | .[]
+            | {
+                name: ((.[0].tracker // "unknown") + "-" + (.[0].reid // "unknown")),
+                fps: (((map(.total_frames // 0) | add) * 1000) / (map(.processing_time_ms // 0) | add)),
+                time: ((map(.processing_time_ms // 0) | add) / 1000),
+                tracks: (map(.total_tracks // 0) | add)
+              }
+            | [.name, .fps, .time, .tracks]
+            | @tsv
+        ' "$json_file")
+    }
+
+    load_groups "$V1_JSON" "V1"
+    load_groups "$V2_JSON" "V2"
+
+    echo -e "\n${CYAN}Tracker/ReID Breakdown:${NC}\n"
+    printf "┌──────────────────────┬──────────┬──────────┬──────────┬──────────┬──────────┐\n"
+    printf "│ %-20s │ %8s │ %8s │ %8s │ %8s │ %8s │\n" "Tracker" "$V1 FPS" "$V2 FPS" "FPS Δ%" "$V1 trk" "$V2 trk"
+    printf "├──────────────────────┼──────────┼──────────┼──────────┼──────────┼──────────┤\n"
+
+    for name in "${!V1_GROUP_FPS[@]}"; do
+        if [[ -z "${V2_GROUP_FPS[$name]:-}" ]]; then
+            continue
+        fi
+
+        group_delta=$(calc_delta "${V1_GROUP_FPS[$name]}" "${V2_GROUP_FPS[$name]}")
+        group_percent=$(calc_percent "${V1_GROUP_FPS[$name]}" "$group_delta")
+        printf "│ %-20s │ %8.1f │ %8.1f │ %+7.1f%% │ %8.0f │ %8.0f │\n" \
+            "$name" \
+            "${V1_GROUP_FPS[$name]}" \
+            "${V2_GROUP_FPS[$name]}" \
+            "$group_percent" \
+            "${V1_GROUP_TRACKS[$name]}" \
+            "${V2_GROUP_TRACKS[$name]}"
+    done | sort
+
+    printf "└──────────────────────┴──────────┴──────────┴──────────┴──────────┴──────────┘\n"
+fi
+
+echo -e "\n${YELLOW}Note: For HOTA/MOTA/IDF1 metrics, compare matching TrackEval report names:${NC}"
+echo -e "  python3 -m scripts.compare_versions_minimal \\"
+echo -e "    ${V1}-${MODE}-botsort-reid-off ${V2}-${MODE}-botsort-reid-off \\"
+echo -e "    --base-dir output/reports --groups primary detection counts \\"
+echo -e "    --html --json --output output/comparison/${V1}-${V2}/botsort-reid-off\n"

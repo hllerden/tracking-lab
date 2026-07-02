@@ -44,6 +44,7 @@ struct BotSortConfig {
     bool  useReId         = false;
     float reidAlpha       = 0.65f;
     float featureEmaDecay = 0.9f;
+    float reidAppearanceThresh = 0.25f;  // LOST recovery: max cosine distance for ReID-only match
 
     // ---- BoT-SORT CMC parameters ----
     enum class CmcMethod { NONE, SPARSE_LK, ECC };

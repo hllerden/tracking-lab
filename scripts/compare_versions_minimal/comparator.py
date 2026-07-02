@@ -41,7 +41,9 @@ class TrackEvalComparator:
         version1: str,
         version2: str,
         config: Optional[MetricsConfig] = None,
-        base_dir: str = "output/reports"
+        base_dir: str = "output/reports",
+        csv_path1: Optional[Path] = None,
+        csv_path2: Optional[Path] = None
     ):
         """
         Initialize the comparator.
@@ -51,6 +53,8 @@ class TrackEvalComparator:
             version2: Second version identifier (e.g., 'v1.0.2-minimal')
             config: MetricsConfig instance (uses DEFAULT_CONFIG if None)
             base_dir: Base directory for reports
+            csv_path1: Explicit CSV path for version 1 (skips lookup by name)
+            csv_path2: Explicit CSV path for version 2 (skips lookup by name)
 
         Raises:
             FileNotFoundError: If version directories or CSV files not found
@@ -60,9 +64,9 @@ class TrackEvalComparator:
         self.config = config or DEFAULT_CONFIG
         self.base_dir = base_dir
 
-        # Find CSV files
-        self.csv_path1 = find_report_file(version1, base_dir)
-        self.csv_path2 = find_report_file(version2, base_dir)
+        # Find CSV files unless explicit paths were provided
+        self.csv_path1 = csv_path1 if csv_path1 is not None else find_report_file(version1, base_dir)
+        self.csv_path2 = csv_path2 if csv_path2 is not None else find_report_file(version2, base_dir)
 
         # Data storage (populated by load_data())
         self.df1: Optional[pd.DataFrame] = None
@@ -211,9 +215,12 @@ class TrackEvalComparator:
                 # Calculate percentage change
                 delta_pct = safe_divide(delta, v1_val, default=float('nan')) * 100
 
-                # Determine if improved
-                higher_better = is_higher_better(metric)
-                improved = (delta > 0) if higher_better else (delta < 0)
+                # Determine if improved (None when either side is missing)
+                if pd.isna(delta):
+                    improved = None
+                else:
+                    higher_better = is_higher_better(metric)
+                    improved = (delta > 0) if higher_better else (delta < 0)
 
                 results.append({
                     'sequence': seq,
@@ -295,8 +302,8 @@ class TrackEvalComparator:
             'version2': self.version2,
             'total_sequences_compared': len(self.common_sequences),
             'total_metrics_compared': len(self.config.get_metrics()),
-            'improvements': int(combined['improved'].sum()),
-            'regressions': int((~combined['improved']).sum()),
+            'improvements': int((combined['improved'] == True).sum()),
+            'regressions': int((combined['improved'] == False).sum()),
             'sequences_only_in_v1': self.only_in_v1,
             'sequences_only_in_v2': self.only_in_v2,
         }

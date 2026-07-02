@@ -21,8 +21,16 @@ os.environ.setdefault('MPLCONFIGDIR', str(_REPO_ROOT / 'output' / '.matplotlib')
 
 from .comparator import TrackEvalComparator
 from .config import MetricsConfig
+from .multi_comparator import MultiTrackerComparator
+from .multi_reporter import MultiReportGenerator
 from .reporter import ReportGenerator
-from .utils import find_report_file, is_higher_better, list_available_versions, load_trackeval_csv
+from .utils import (
+    discover_tracker_reports,
+    find_report_file,
+    is_higher_better,
+    list_available_versions,
+    load_trackeval_csv,
+)
 
 
 TRACKER_RANK_METRICS = ['HOTA___AUC', 'MOTA', 'IDF1', 'IDSW', 'Frag']
@@ -35,7 +43,14 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic comparison with primary metrics
+  # Compare ALL trackers discovered under two version prefixes
+  python -m scripts.compare_versions_minimal v1.1.0 v1.1.1
+
+  # Same, restricted to specific trackers, with HTML/JSON output
+  python -m scripts.compare_versions_minimal v1.1.0 v1.1.1 \\
+      --trackers tracker-compare-botsort-reid-on --html --json -o output/comparison/all
+
+  # Basic single-report comparison with primary metrics
   python -m scripts.compare_versions_minimal v1.0.1-minimal v1.0.2-minimal
 
   # Compare specific metric groups
@@ -86,6 +101,13 @@ Available metric groups:
         '--all',
         action='store_true',
         help='Compare all available metrics'
+    )
+
+    # Multi-tracker comparison filter
+    parser.add_argument(
+        '--trackers',
+        nargs='+',
+        help='Restrict multi-tracker comparison to these tracker names'
     )
 
     # Comparison options
@@ -488,6 +510,73 @@ def _write_tracker_ranking_reports(ranking, output_dir, write_json=False, write_
         print(f"✓ Saved tracker ranking HTML: {path.resolve()}")
 
 
+def _run_multi_comparison(args, config):
+    """Compare every tracker discovered under two version prefixes."""
+    try:
+        print(f"\nInitializing multi-tracker comparison: {args.version1} vs {args.version2}")
+        print(f"Configuration: {config}\n")
+
+        multi = MultiTrackerComparator(
+            args.version1,
+            args.version2,
+            config=config,
+            base_dir=args.base_dir,
+            trackers=args.trackers
+        )
+
+        if not multi.reports1:
+            print(f"Warning: no tracker reports found for {args.version1}; "
+                  f"all trackers will be shown as missing on that side.")
+        if not multi.reports2:
+            print(f"Warning: no tracker reports found for {args.version2}; "
+                  f"all trackers will be shown as missing on that side.")
+
+        for tracker in multi.common_trackers:
+            print(f"Comparing tracker: {tracker}")
+        multi.compare()
+        print("\n✓ Comparison completed successfully")
+
+    except FileNotFoundError as e:
+        print(f"\nError: {e}", file=sys.stderr)
+        return 1
+    except ValueError as e:
+        print(f"\nError: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"\nUnexpected error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return 1
+
+    try:
+        reporter = MultiReportGenerator(multi, output_dir=args.output)
+        reporter.generate_terminal_report(detailed=args.detailed)
+
+        if args.charts:
+            print("\nWarning: --charts is not supported in multi-tracker mode. Skipping.")
+
+        if args.json:
+            if args.output:
+                reporter.generate_json_report()
+            else:
+                print("\nWarning: --output required for JSON report. Skipping.")
+
+        if args.html:
+            if args.output:
+                reporter.generate_html_report()
+            else:
+                print("\nWarning: --output required for HTML report. Skipping.")
+
+        print("\n✓ All operations completed successfully")
+        return 0
+
+    except Exception as e:
+        print(f"\nError generating reports: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
 def main():
     """Main entry point for the CLI."""
     args = parse_args()
@@ -538,6 +627,20 @@ def main():
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
+
+    # Multi-tracker mode: version args are prefixes matching one or more
+    # report directories (e.g. 'v1.1.0' -> 'v1.1.0-tracker-compare-*').
+    # Exact single-report directory names keep the original flow.
+    reports1 = discover_tracker_reports(args.version1, args.base_dir)
+    reports2 = discover_tracker_reports(args.version2, args.base_dir)
+    single_mode = (
+        not args.trackers
+        and set(reports1) == {'default'}
+        and set(reports2) == {'default'}
+    )
+
+    if not single_mode:
+        return _run_multi_comparison(args, config)
 
     # Create comparator
     try:

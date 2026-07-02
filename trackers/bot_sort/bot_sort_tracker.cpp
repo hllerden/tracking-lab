@@ -227,11 +227,15 @@ void BotSortTracker::correctTrack(BotSortTrack& t,
 
 // ========== Stage 1: high-confidence association ==========
 
-std::vector<int> BotSortTracker::associateHighConf(const std::vector<cv::Rect>& dets,
-                                                   const std::vector<float>& confs,
-                                                   const std::vector<cv::Mat>& feats) {
+BotSortTracker::AssociationResult BotSortTracker::associateHighConf(
+        const std::vector<cv::Rect>& dets,
+        const std::vector<float>& confs,
+        const std::vector<cv::Mat>& feats) {
     const int nT = static_cast<int>(tracks_.size());
     const int nD = static_cast<int>(dets.size());
+
+    AssociationResult result;
+    result.matchedDetections.assign(nD, false);
 
     std::vector<int> activeIdx;
     activeIdx.reserve(nT);
@@ -241,15 +245,11 @@ std::vector<int> BotSortTracker::associateHighConf(const std::vector<cv::Rect>& 
         }
     }
 
-    if (nD == 0) {
-        return activeIdx;
-    }
-
-    if (nT == 0 || activeIdx.empty()) {
-        // Init new tracks from all high-conf detections when no active tracks exist.
-        std::vector<bool> matched(nD, false);
-        initNewTracks(dets, matched, confs, feats);
-        return {};
+    if (nD == 0 || activeIdx.empty()) {
+        // No association possible; all detections stay unmatched so they can
+        // still attempt LOST-track recovery before opening new IDs.
+        result.unmatchedTrackIdx = std::move(activeIdx);
+        return result;
     }
 
     const bool reidActive = config_.useReId
@@ -285,9 +285,7 @@ std::vector<int> BotSortTracker::associateHighConf(const std::vector<cv::Rect>& 
     std::vector<int> assignment;
     hungarian.Solve(costMatrix, assignment);
 
-    std::vector<bool> matchedDets(nD, false);
-    std::vector<int> unmatchedTrackIdx;
-    unmatchedTrackIdx.reserve(nA);
+    result.unmatchedTrackIdx.reserve(nA);
 
     for (int ai = 0; ai < nA; ++ai) {
         const int ti = activeIdx[ai];
@@ -298,24 +296,23 @@ std::vector<int> BotSortTracker::associateHighConf(const std::vector<cv::Rect>& 
             correctTrack(tracks_[ti], dets[detJ],
                          (!confs.empty() ? confs[detJ] : 1.0f),
                          feat);
-            matchedDets[detJ] = true;
+            result.matchedDetections[detJ] = true;
         } else {
-            unmatchedTrackIdx.push_back(ti);
+            result.unmatchedTrackIdx.push_back(ti);
         }
     }
 
-    initNewTracks(dets, matchedDets, confs, feats);
-    return unmatchedTrackIdx;
+    return result;
 }
 
 // ========== Stage 2: low-confidence association for unmatched TRACKING tracks ==========
 
-BotSortTracker::LowConfMatchResult BotSortTracker::matchTrackingWithLowConf(
+BotSortTracker::AssociationResult BotSortTracker::matchTrackingWithLowConf(
         const std::vector<int>& trackIdx,
         const std::vector<cv::Rect>& dets,
         const std::vector<float>& confs,
         const std::vector<cv::Mat>& feats) {
-    LowConfMatchResult result;
+    AssociationResult result;
     result.matchedDetections.assign(dets.size(), false);
     if (trackIdx.empty() || dets.empty()) {
         result.unmatchedTrackIdx = trackIdx;
@@ -413,12 +410,13 @@ void BotSortTracker::ageExistingLostTracks(const std::vector<int>& lostIdx) {
     }
 }
 
-// ========== Stage 2: low-confidence revival of LOST tracks ==========
+// ========== Stage 3/4: revival of LOST tracks ==========
 
-void BotSortTracker::reviveLostWithLowConf(const std::vector<cv::Rect>& dets,
-                                            const std::vector<float>& confs,
-                                            const std::vector<cv::Mat>& feats) {
-    if (dets.empty()) return;
+std::vector<bool> BotSortTracker::reviveLostTracks(const std::vector<cv::Rect>& dets,
+                                                   const std::vector<float>& confs,
+                                                   const std::vector<cv::Mat>& feats) {
+    std::vector<bool> matchedDets(dets.size(), false);
+    if (dets.empty()) return matchedDets;
 
     std::vector<int> lostIdx;
     for (int i = 0; i < static_cast<int>(tracks_.size()); ++i) {
@@ -426,31 +424,40 @@ void BotSortTracker::reviveLostWithLowConf(const std::vector<cv::Rect>& dets,
             lostIdx.push_back(i);
         }
     }
-    if (lostIdx.empty()) return;
+    if (lostIdx.empty()) return matchedDets;
 
     const int nL = static_cast<int>(lostIdx.size());
     const int nD = static_cast<int>(dets.size());
-    const bool reidActiveLow = config_.useReId
+    const bool reidActive = config_.useReId
         && !feats.empty()
         && static_cast<int>(feats.size()) == nD;
 
     std::vector<std::vector<double>> costMatrix(nL, std::vector<double>(nD, 100.0));
     for (int li = 0; li < nL; ++li) {
-        const cv::Rect& box = tracks_[lostIdx[li]].boundingBox;
+        const BotSortTrack& track = tracks_[lostIdx[li]];
+        const cv::Rect& box = track.cmcPredictedBox;
         for (int j = 0; j < nD; ++j) {
-            double iou = computeIoU(config_.iouType, box, dets[j]);
-            if (iou > config_.lowConfIouThreshold) {
+            const double iou = computeIoU(config_.iouType, box, dets[j]);
+            const bool iouGate = iou > config_.lowConfIouThreshold;
+
+            double appCost = -1.0;
+            if (reidActive && !track.featureEmbedding.empty() && !feats[j].empty()) {
+                appCost = cosineDistance(track.featureEmbedding, feats[j]);
+            }
+
+            if (iouGate) {
                 double iouCost = 1.0 - std::max(0.0, std::min(1.0, iou));
-                if (reidActiveLow
-                    && !tracks_[lostIdx[li]].featureEmbedding.empty()
-                    && !feats[j].empty()) {
-                    double appCost = cosineDistance(tracks_[lostIdx[li]].featureEmbedding, feats[j]);
+                if (appCost >= 0.0) {
                     costMatrix[li][j] = std::max(0.0,
                         config_.reidAlpha * iouCost
                         + (1.0 - config_.reidAlpha) * appCost);
                 } else {
                     costMatrix[li][j] = std::max(0.0, iouCost);
                 }
+            } else if (appCost >= 0.0 && appCost < config_.reidAppearanceThresh) {
+                // ReID-only recovery: object reappeared away from the predicted
+                // box but the appearance embedding still matches.
+                costMatrix[li][j] = appCost;
             }
         }
     }
@@ -459,7 +466,6 @@ void BotSortTracker::reviveLostWithLowConf(const std::vector<cv::Rect>& dets,
     std::vector<int> assignment;
     hungarian.Solve(costMatrix, assignment);
 
-    std::vector<bool> matchedDets(nD, false);
     for (int li = 0; li < nL; ++li) {
         const int detJ = assignment[li];
         if (detJ < 0 || detJ >= nD) continue;
@@ -473,6 +479,8 @@ void BotSortTracker::reviveLostWithLowConf(const std::vector<cv::Rect>& dets,
                      feat);
         matchedDets[detJ] = true;
     }
+
+    return matchedDets;
 }
 
 // ========== Initialize new tracks ==========
@@ -592,13 +600,13 @@ std::vector<IObjectTracker::TrackedResult> BotSortTracker::update(
     predictAllAndApplyCMC(warp);
 
     // Stage 1: high-confidence detections → TRACKING tracks
-    std::vector<int> unmatchedTracking =
-        associateHighConf(highRects, highConfs, highFeats);
+    AssociationResult highMatch = associateHighConf(highRects, highConfs, highFeats);
+    std::vector<int> unmatchedTracking = std::move(highMatch.unmatchedTrackIdx);
 
     // Stage 2: low-confidence detections first recover Stage-1-unmatched
     // TRACKING tracks. This is the ByteTrack step that prevents false misses
     // when detector confidence dips for an otherwise active object.
-    LowConfMatchResult lowMatch;
+    AssociationResult lowMatch;
     if (!lowRects.empty()) {
         lowMatch = matchTrackingWithLowConf(
             unmatchedTracking, lowRects, lowConfs, lowFeats);
@@ -607,7 +615,39 @@ std::vector<IObjectTracker::TrackedResult> BotSortTracker::update(
 
     markTrackingTracksLost(unmatchedTracking);
 
-    // Optional BoT-SORT/ReID-style recovery of already LOST tracks, using only
+    // Stage 3: unmatched high-confidence detections → LOST tracks (IoU + ReID).
+    // Recovers objects that reappear with high confidence after a short
+    // disappearance, instead of opening a new ID immediately.
+    {
+        std::vector<cv::Rect> remainingHighRects;
+        std::vector<float> remainingHighConfs;
+        std::vector<cv::Mat> remainingHighFeats;
+        std::vector<size_t> remainingHighOrigIdx;
+        remainingHighRects.reserve(highRects.size());
+        remainingHighConfs.reserve(highConfs.size());
+        remainingHighFeats.reserve(highFeats.size());
+        remainingHighOrigIdx.reserve(highRects.size());
+        for (size_t i = 0; i < highRects.size(); ++i) {
+            if (i < highMatch.matchedDetections.size() && highMatch.matchedDetections[i]) {
+                continue;
+            }
+            remainingHighRects.push_back(highRects[i]);
+            if (i < highConfs.size()) remainingHighConfs.push_back(highConfs[i]);
+            if (i < highFeats.size()) remainingHighFeats.push_back(highFeats[i]);
+            remainingHighOrigIdx.push_back(i);
+        }
+        if (!remainingHighRects.empty()) {
+            std::vector<bool> revived = reviveLostTracks(
+                remainingHighRects, remainingHighConfs, remainingHighFeats);
+            for (size_t k = 0; k < revived.size(); ++k) {
+                if (revived[k]) {
+                    highMatch.matchedDetections[remainingHighOrigIdx[k]] = true;
+                }
+            }
+        }
+    }
+
+    // Stage 4: BoT-SORT/ReID-style recovery of remaining LOST tracks, using only
     // low-confidence detections not consumed by active tracks above.
     if (!lowRects.empty()) {
         std::vector<cv::Rect> remainingLowRects;
@@ -624,8 +664,12 @@ std::vector<IObjectTracker::TrackedResult> BotSortTracker::update(
             if (i < lowConfs.size()) remainingLowConfs.push_back(lowConfs[i]);
             if (i < lowFeats.size()) remainingLowFeats.push_back(lowFeats[i]);
         }
-        reviveLostWithLowConf(remainingLowRects, remainingLowConfs, remainingLowFeats);
+        reviveLostTracks(remainingLowRects, remainingLowConfs, remainingLowFeats);
     }
+
+    // Stage 5: open new IDs only for high-confidence detections that matched
+    // neither an active nor a LOST track.
+    initNewTracks(highRects, highMatch.matchedDetections, highConfs, highFeats);
 
     ageExistingLostTracks(existingLostIdx);
 

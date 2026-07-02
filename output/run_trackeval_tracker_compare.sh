@@ -98,6 +98,11 @@ for tracker_source_dir in "$SOURCE_DIR"/*; do
   copied=0
   for file in "$tracker_source_dir"/MOT17-*.txt; do
     [[ -f "$file" ]] || continue
+    seq_name="$(basename "$file" .txt)"
+    if [[ ! -e "$GT_LINK/$seq_name/seqinfo.ini" ]]; then
+      echo -e "${YELLOW}Atlanıyor: ${tracker_short_name}/$(basename "$file") için GT seqinfo yok.${NC}"
+      continue
+    fi
     cp "$file" "$tracker_data_dir/$(basename "$file")"
     copied=$((copied + 1))
   done

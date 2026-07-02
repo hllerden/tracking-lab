@@ -936,7 +936,7 @@ int main(int argc, char **argv)
 #endif
         true,       // showVisualization
         runOnGPU,    // useGPU for ReID inference
-        TrackerType::BYTETRACK
+        TrackerType::BOT_SORT
     );
 
     // MODE 3: Compare different detectors (DPM, FRCNN, SDP) - Tracker performance test

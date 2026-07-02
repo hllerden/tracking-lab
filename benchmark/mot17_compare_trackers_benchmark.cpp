@@ -270,11 +270,11 @@ CompareResult runOne(const CompareOptions& options,
     try {
         const std::string sequencePath = options.projectBasePath + "/MOT17-Data/MOT17/train/" +
                                          sequence + "-" + detector;
-        const std::string trackerOutputDir = outputBaseDir + "/" + trackerCase.name;
+        const std::string trackerOutputDir = outputBaseDir + "/" + trackerCase.name +
+                                             "-" + reidCase.name;
         fs::create_directories(trackerOutputDir);
 
-        const std::string outputPath = trackerOutputDir + "/" + sequence + "-" + detector +
-                                       "-" + reidCase.name + ".txt";
+        const std::string outputPath = trackerOutputDir + "/" + sequence + "-" + detector + ".txt";
         result.outputFile = outputPath;
 
         MotSequenceReader reader(sequencePath);
