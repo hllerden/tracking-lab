@@ -7,7 +7,7 @@ and formatting.
 
 import os
 from pathlib import Path
-from typing import Tuple, Optional, List
+from typing import Dict, Tuple, Optional, List
 import pandas as pd
 
 
@@ -52,6 +52,63 @@ def find_report_file(version: str, base_dir: str = "output/reports") -> Path:
         )
 
     return csv_file
+
+
+def resolve_report_base_dir(base_dir: str = "output/reports") -> Path:
+    """
+    Resolve the report base directory against the project root.
+
+    Args:
+        base_dir: Base directory for reports (absolute or repo-relative)
+
+    Returns:
+        Resolved Path (may not exist)
+    """
+    if os.path.isabs(base_dir):
+        return Path(base_dir)
+    script_dir = Path(__file__).parent.parent.parent
+    return script_dir / base_dir
+
+
+def discover_tracker_reports(version: str, base_dir: str = "output/reports") -> Dict[str, Path]:
+    """
+    Discover all tracker report CSVs belonging to a version prefix.
+
+    A report directory belongs to `version` when its name is exactly
+    `version` or starts with `version + '-'` and it contains a
+    pedestrian_detailed.csv file. The tracker name is the directory name
+    with the version prefix stripped ('default' on exact match).
+
+    Example: version 'v1.1.0' matches 'v1.1.0-tracker-compare-botsort-reid-off'
+    and yields tracker name 'tracker-compare-botsort-reid-off'.
+
+    Args:
+        version: Version identifier or prefix (e.g., 'v1.1.0')
+        base_dir: Base directory for reports
+
+    Returns:
+        Dict mapping tracker name to pedestrian_detailed.csv path
+    """
+    report_dir = resolve_report_base_dir(base_dir)
+    if not report_dir.exists():
+        return {}
+
+    trackers: Dict[str, Path] = {}
+    for entry in sorted(report_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        csv_file = entry / "pedestrian_detailed.csv"
+        if not csv_file.exists():
+            continue
+
+        if entry.name == version:
+            trackers['default'] = csv_file
+        elif entry.name.startswith(version + '-'):
+            tracker_name = entry.name[len(version):].lstrip('-_')
+            if tracker_name:
+                trackers[tracker_name] = csv_file
+
+    return trackers
 
 
 def list_available_versions(base_dir: str = "output/reports") -> List[str]:
@@ -203,19 +260,27 @@ def get_metric_display_name(metric: str) -> str:
     """
     # Metric descriptions
     descriptions = {
+        'HOTA___AUC': 'HOTA (Higher Order Tracking Accuracy)',
         'HOTA(0)': 'HOTA (Higher Order Tracking Accuracy)',
         'MOTA': 'MOTA (Multiple Object Tracking Accuracy)',
         'IDF1': 'IDF1 (ID F1 Score)',
+        'DetA___AUC': 'DetA (Detection Accuracy)',
         'DetA(0)': 'DetA (Detection Accuracy)',
+        'AssA___AUC': 'AssA (Association Accuracy)',
         'AssA(0)': 'AssA (Association Accuracy)',
+        'LocA___AUC': 'LocA (Localization Accuracy)',
         'LocA(0)': 'LocA (Localization Accuracy)',
         'MOTP': 'MOTP (Tracking Precision)',
         'CLR_Re': 'Recall (CLEAR)',
         'CLR_Pr': 'Precision (CLEAR)',
         'CLR_F1': 'F1 Score (CLEAR)',
+        'DetRe___AUC': 'Detection Recall',
         'DetRe(0)': 'Detection Recall',
+        'DetPr___AUC': 'Detection Precision',
         'DetPr(0)': 'Detection Precision',
+        'AssRe___AUC': 'Association Recall',
         'AssRe(0)': 'Association Recall',
+        'AssPr___AUC': 'Association Precision',
         'AssPr(0)': 'Association Precision',
         'IDR': 'ID Recall',
         'IDP': 'ID Precision',

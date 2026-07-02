@@ -14,83 +14,24 @@
 #include <vector>
 
 /**
- * @file kalman_iou_tracker.h
- * @brief Kalman Filter + IoU-based object tracker
+ * @file kalman_iou_tracker_6state.h
+ * @brief Kalman Filter + IoU-based object tracker (6-state)
  * @author Halil Erden
  * @date 17.10.2025
  *
- * This tracker combines Kalman filtering for motion prediction with
- * various IoU metrics for detection-to-track association. It supports
- * multiple IoU variants (IOU, GIOU, DIOU, CIOU, SIOU, AIOU) and uses
- * the Hungarian algorithm for optimal matching.
+ * @deprecated This tracker is superseded by KalmanIoUByteTrack which implements
+ *             the full ByteTrack two-stage association pipeline with optional ReID
+ *             support. KalmanIoUTracker6State will not receive further development.
+ *             Existing call sites are preserved for backward compatibility.
  */
 
-/**
- * @brief Configuration for KalmanIoUTracker
- */
-#ifndef KALMAN_IOU_CONFIG_DEFINED
-#define KALMAN_IOU_CONFIG_DEFINED
-struct KalmanIoUConfig {
-    /**
-     * @brief IoU calculation method
-     */
-    enum class IoUType {
-        IOU,    ///< Standard Intersection over Union
-        GIOU,   ///< Generalized IoU (better for low overlap)
-        DIOU,   ///< Distance IoU (penalizes center distance)
-        CIOU,   ///< Complete IoU (includes aspect ratio)
-        SIOU,   ///< Soft IoU (IoU with slack weighting)
-        AIOU    ///< Alpha IoU (tunable exponent)
-    };
-
-    IoUType iouType = IoUType::CIOU;          ///< IoU calculation method
-    float iouThreshold = 0.2f;                ///< Minimum IoU for matching (lowered from 0.3 to match original code)
-    bool usePredictionInLost = true;          ///< Use predictions for lost tracks
-    int maxLostFrames = 20;                   ///< Max frames without detection before deletion
-    bool removeOutOfBounds = true;            ///< Remove tracks outside frame
-    cv::Rect cameraBounds = cv::Rect(0, 0, 640, 480);  ///< Camera frame bounds
-
-    // Kalman filter parameters
-    float processNoise = 0.01f;               ///< Process noise covariance
-    float measurementNoise = 0.5f;            ///< Measurement noise covariance
-    float errorCovPost = 0.1f;                ///< Initial error covariance
-
-    // Trajectory parameters
-    int maxTrajectoryLength = 50;             ///< Maximum trajectory points to keep
-
-    // IoU variants tuning
-    float softIoUSlack = 0.5f;                ///< Slack factor (<1 boosts moderate IoUs)
-    float alphaIoUExponent = 0.6f;            ///< Exponent for Alpha IoU (>0)
-
-    // Track state management
-    int lostStateThreshold = 2;               ///< Missed frames before switching to LOST state
-
-    // Bounding box size constraints for prediction clamping
-    float minBBoxWidth = 10.0f;               ///< Minimum predicted bbox width (pixels)
-    float minBBoxHeight = 20.0f;              ///< Minimum predicted bbox height (pixels)
-    float maxBBoxWidth = 500.0f;              ///< Maximum predicted bbox width (pixels)
-    float maxBBoxHeight = 600.0f;             ///< Maximum predicted bbox height (pixels)
-    float sizeVelocityClamp = 0.10f;          ///< Max size velocity as fraction of bbox dimension
-
-    // ByteTrack two-stage association thresholds (ignored by 6-state and 8-state trackers)
-    float highConfThreshold = 0.6f;           ///< High-confidence detection threshold (stage 1)
-    float lowConfFloor = 0.1f;                ///< Low-confidence detection floor (stage 2)
-    float lowConfIouThreshold = 0.15f;        ///< IoU threshold for low-confidence track revival
-
-    // ReID appearance matching (ByteTrack only)
-    bool  useReId         = false;            ///< Enable hybrid IoU + cosine distance cost
-    float reidAlpha       = 0.65f;            ///< Weight of IoU term (1-reidAlpha → appearance term)
-    float featureEmaDecay = 0.9f;             ///< EMA momentum for track appearance update
-
-    KalmanIoUConfig() = default;
-};
-#endif // KALMAN_IOU_CONFIG_DEFINED
+#include "kalman_iou_config.h"
 
 /**
  * @brief Internal tracked object representation for 6-state tracker
  * This is Kalman-specific and not exposed through IObjectTracker interface
  */
-namespace KalmanIoU6State {
+namespace [[deprecated("KalmanIoU6State is superseded by KalmanIoUByteTrackNS")]] KalmanIoU6State {
 struct TrackedObject {
     enum State {
         TRACKING,   ///< Active tracking
@@ -120,7 +61,8 @@ struct TrackedObject {
  * - IVisualTracker: Drawing and trajectory visualization
  * - IConfigurableTracker: Runtime configuration
  */
-class KalmanIoUTracker6State : public IObjectTracker,
+class [[deprecated("KalmanIoUTracker6State is superseded by KalmanIoUByteTrack; do not use in new code")]]
+KalmanIoUTracker6State : public IObjectTracker,
                          public IVisualTracker,
                          public IConfigurableTracker<KalmanIoUConfig> {
 public:

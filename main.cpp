@@ -207,7 +207,6 @@ int processMOT17SequenceTrackerOnly(const std::string& sequencePath,
         config.featureEmaDecay     = 0.9f;
         config.highConfThreshold  = 0.55f;  // biraz daha fazla det Stage 1'e
         config.lostStateThreshold = 3;      // biraz daha toleranslı
-
         config.removeOutOfBounds = true;
         config.cameraBounds = cv::Rect(0, 0, reader.getFrameSize().width, reader.getFrameSize().height);
         TrackerFactory::applyConfig(tracker, config);
@@ -245,6 +244,11 @@ int processMOT17SequenceTrackerOnly(const std::string& sequencePath,
 
             // Get detections for this frame from det.txt
             auto detections = detReader.getDetectionsForFrame(frameIndex);
+
+            // BoT-SORT needs the raw frame for camera motion compensation
+            if (auto* bst = dynamic_cast<BotSortTracker*>(tracker)) {
+                bst->setFrame(frame);
+            }
 
             // Run tracking (no YOLO inference!)
             auto trackedResults = tracker->update(detections);
@@ -421,6 +425,11 @@ int processMOT17SequenceTrackerOnlyWithReId(
             auto features = reidExtractor.extractBatch(frame, bboxes);
             for (size_t i = 0; i < detections.size() && i < features.size(); ++i)
                 detections[i].featureVector = features[i];
+
+            // BoT-SORT needs the raw frame for camera motion compensation
+            if (auto* bst = dynamic_cast<BotSortTracker*>(tracker)) {
+                bst->setFrame(frame);
+            }
 
             // Run tracking with appearance-enriched detections
             tracker->update(detections);
@@ -905,10 +914,10 @@ int main(int argc, char **argv)
 
     // MODE 2: Tracker-Only (det.txt) - Tests only tracking algorithm (~10x faster!)
     // processMOT17SequenceTrackerOnly(
-    //     projectBasePath + "/MOT17-Data/MOT17/train/MOT17-04-FRCNN",
-    //     projectBasePath + "/output/MOT17-04-FRCNN-tracker.txt",
+    //     projectBasePath + "/MOT17-Data/MOT17/train/MOT17-13-FRCNN",
+    //     projectBasePath + "/output/MOT17-13-FRCNN-tracker.txt",
     //     true,  // showVisualization
-    //     TrackerType::BYTETRACK
+    //     TrackerType::BOT_SORT
     // );
 
     // MODE 2b: Tracker-Only + ReID appearance matching
@@ -926,7 +935,8 @@ int main(int argc, char **argv)
         projectBasePath + "/models/yolo26n-reid-sim.onnx",
 #endif
         true,       // showVisualization
-        runOnGPU    // useGPU for ReID inference
+        runOnGPU,    // useGPU for ReID inference
+        TrackerType::BOT_SORT
     );
 
     // MODE 3: Compare different detectors (DPM, FRCNN, SDP) - Tracker performance test

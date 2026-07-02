@@ -69,7 +69,13 @@ std::vector<cv::Mat> ReidExtractor::extractBatch(const cv::Mat& frame,
 
             cv::Mat crop;
             cv::resize(frame(safe), crop, cv::Size(W, H));
-            cv::cvtColor(crop, crop, cv::COLOR_BGR2RGB);
+            if (crop.channels() == 1) {
+                cv::cvtColor(crop, crop, cv::COLOR_GRAY2RGB);
+            } else if (crop.channels() == 4) {
+                cv::cvtColor(crop, crop, cv::COLOR_BGRA2RGB);
+            } else {
+                cv::cvtColor(crop, crop, cv::COLOR_BGR2RGB);
+            }
             crop.convertTo(crop, CV_32F, 1.0 / 255.0);
 
             std::vector<cv::Mat> channels(C);
@@ -119,7 +125,13 @@ cv::Mat ReidExtractor::preprocess(const cv::Mat& crop) const {
     cv::resize(crop, resized, inputSize_);
 
     cv::Mat rgbFloat;
-    cv::cvtColor(resized, rgbFloat, cv::COLOR_BGR2RGB);
+    if (resized.channels() == 1) {
+        cv::cvtColor(resized, rgbFloat, cv::COLOR_GRAY2RGB);
+    } else if (resized.channels() == 4) {
+        cv::cvtColor(resized, rgbFloat, cv::COLOR_BGRA2RGB);
+    } else {
+        cv::cvtColor(resized, rgbFloat, cv::COLOR_BGR2RGB);
+    }
     rgbFloat.convertTo(rgbFloat, CV_32F, 1.0 / 255.0);
 
     static const float mean[3] = {0.485f, 0.456f, 0.406f};

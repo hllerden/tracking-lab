@@ -218,7 +218,8 @@ void KalmanIoUByteTrack::updateTrackersWithHungarian(const std::vector<cv::Rect>
                                                    float iouOverride,
                                                    bool allowNewTrackers,
                                                    bool removeLost,
-                                                   const std::vector<cv::Mat>& features) {
+                                                   const std::vector<cv::Mat>& features,
+                                                   std::vector<bool>* matchedDetectionsOut) {
     std::vector<cv::Rect> predictedBoxes;
     for (auto& tracker : trackers) {
         // Adaptive process noise covariance (DeepSORT/BoT-SORT approach)
@@ -298,10 +299,13 @@ void KalmanIoUByteTrack::updateTrackersWithHungarian(const std::vector<cv::Rect>
     if (numTrackers == 0 || numDetections == 0) {
         std::vector<bool> matchedDetections(numDetections, false);
         if (allowNewTrackers) {
-            addNewTrackers(detections, matchedDetections, confidences);
+            addNewTrackers(detections, matchedDetections, confidences, features);
         }
         if (removeLost) {
             removeLostTrackers();
+        }
+        if (matchedDetectionsOut) {
+            *matchedDetectionsOut = std::move(matchedDetections);
         }
         return;
     }
@@ -405,6 +409,9 @@ void KalmanIoUByteTrack::updateTrackersWithHungarian(const std::vector<cv::Rect>
                     trackers[i].featureEmbedding =
                         config.featureEmaDecay * trackers[i].featureEmbedding
                         + (1.0 - config.featureEmaDecay) * newFeat;
+                    cv::normalize(trackers[i].featureEmbedding,
+                                  trackers[i].featureEmbedding,
+                                  1.0, 0.0, cv::NORM_L2);
                 }
             }
 
@@ -438,20 +445,24 @@ void KalmanIoUByteTrack::updateTrackersWithHungarian(const std::vector<cv::Rect>
     }
 
     if (allowNewTrackers) {
-        addNewTrackers(detections, matchedDetections, confidences);
+        addNewTrackers(detections, matchedDetections, confidences, features);
     }
     if (removeLost) {
         removeLostTrackers();
     }
+    if (matchedDetectionsOut) {
+        *matchedDetectionsOut = std::move(matchedDetections);
+    }
 }
 
-void KalmanIoUByteTrack::matchLostTrackersWithLowConfidence(const std::vector<cv::Rect>& detections,
-                                                          const std::vector<float>& confidences,
-                                                          const std::vector<cv::Mat>& features) {
+std::vector<bool> KalmanIoUByteTrack::matchLostTrackers(const std::vector<cv::Rect>& detections,
+                                                        const std::vector<float>& confidences,
+                                                        const std::vector<cv::Mat>& features) {
     const float kLowConfidenceIouThreshold = config.lowConfIouThreshold;
 
+    std::vector<bool> matchedDetections(detections.size(), false);
     if (detections.empty()) {
-        return;
+        return matchedDetections;
     }
 
     std::vector<int> lostIndices;
@@ -463,25 +474,35 @@ void KalmanIoUByteTrack::matchLostTrackersWithLowConfidence(const std::vector<cv
     }
 
     if (lostIndices.empty()) {
-        return;
+        return matchedDetections;
     }
 
-    const bool reidActiveLow = config.useReId && !features.empty()
-                               && features.size() == detections.size();
+    const bool reidActive = config.useReId && !features.empty()
+                            && features.size() == detections.size();
     std::vector<std::vector<double>> costMatrix(lostIndices.size(), std::vector<double>(detections.size(), 100.0));
     for (size_t i = 0; i < lostIndices.size(); ++i) {
         const TrackedObject& trk = trackers[lostIndices[i]];
         for (size_t j = 0; j < detections.size(); ++j) {
-            double iou = computeIoU(config.iouType, trk.boundingBox, detections[j]);
-            if (iou > kLowConfidenceIouThreshold) {
+            const double iou = computeIoU(config.iouType, trk.boundingBox, detections[j]);
+            const bool iouGate = iou > kLowConfidenceIouThreshold;
+
+            double appCost = -1.0;
+            if (reidActive && !trk.featureEmbedding.empty() && !features[j].empty()) {
+                appCost = cosineDistance(trk.featureEmbedding, features[j]);
+            }
+
+            if (iouGate) {
                 double iouCost = 1.0 - std::max(0.0, std::min(1.0, iou));
-                if (reidActiveLow && !trk.featureEmbedding.empty() && !features[j].empty()) {
-                    double appCost = cosineDistance(trk.featureEmbedding, features[j]);
+                if (appCost >= 0.0) {
                     costMatrix[i][j] = std::max(0.0,
                         config.reidAlpha * iouCost + (1.0 - config.reidAlpha) * appCost);
                 } else {
                     costMatrix[i][j] = std::max(0.0, iouCost);
                 }
+            } else if (appCost >= 0.0 && appCost < config.reidAppearanceThresh) {
+                // ReID-only recovery: object reappeared away from the predicted
+                // box but the appearance embedding still matches.
+                costMatrix[i][j] = appCost;
             }
         }
     }
@@ -489,8 +510,6 @@ void KalmanIoUByteTrack::matchLostTrackersWithLowConfidence(const std::vector<cv
     HungarianAlgorithm hungarian;
     std::vector<int> assignment;
     hungarian.Solve(costMatrix, assignment);
-
-    std::vector<bool> matchedDetections(detections.size(), false);
     for (size_t i = 0; i < lostIndices.size(); ++i) {
         int detIdx = assignment[i];
         if (detIdx < 0 || detIdx >= static_cast<int>(detections.size())) {
@@ -538,8 +557,8 @@ void KalmanIoUByteTrack::matchLostTrackersWithLowConfidence(const std::vector<cv
             trackers[trackerIndex].detectionConfidence = confidences[detIdx];
         }
 
-        // ReID feature EMA update on low-conf revival
-        if (reidActiveLow && detIdx < static_cast<int>(features.size())
+        // ReID feature EMA update on revival
+        if (reidActive && detIdx < static_cast<int>(features.size())
             && !features[detIdx].empty()) {
             const cv::Mat& newFeat = features[detIdx];
             if (trackers[trackerIndex].featureEmbedding.empty()) {
@@ -548,6 +567,9 @@ void KalmanIoUByteTrack::matchLostTrackersWithLowConfidence(const std::vector<cv
                 trackers[trackerIndex].featureEmbedding =
                     config.featureEmaDecay * trackers[trackerIndex].featureEmbedding
                     + (1.0 - config.featureEmaDecay) * newFeat;
+                cv::normalize(trackers[trackerIndex].featureEmbedding,
+                              trackers[trackerIndex].featureEmbedding,
+                              1.0, 0.0, cv::NORM_L2);
             }
         }
 
@@ -561,8 +583,9 @@ void KalmanIoUByteTrack::matchLostTrackersWithLowConfidence(const std::vector<cv
         }
 
         matchedDetections[detIdx] = true;
-        std::cout << "[LOWCONF MATCH] Tracker " << trackers[trackerIndex].id << " revived." << std::endl;
     }
+
+    return matchedDetections;
 }
 
 void KalmanIoUByteTrack::updateTrackers(const std::vector<cv::Rect>& detections, std::vector<bool>& matchedDetections) {
@@ -647,7 +670,9 @@ void KalmanIoUByteTrack::updateTrackers(const std::vector<cv::Rect>& detections,
     }
 }
 
-void KalmanIoUByteTrack::addNewTrackers(const std::vector<cv::Rect>& detections, const std::vector<bool>& matchedDetections, const std::vector<float>& confidences) {
+void KalmanIoUByteTrack::addNewTrackers(const std::vector<cv::Rect>& detections, const std::vector<bool>& matchedDetections,
+                                        const std::vector<float>& confidences,
+                                        const std::vector<cv::Mat>& features) {
     for (size_t i = 0; i < detections.size(); ++i) {
         if (!matchedDetections[i]) {
             TrackedObject newTracker;
@@ -674,6 +699,11 @@ void KalmanIoUByteTrack::addNewTrackers(const std::vector<cv::Rect>& detections,
             // Store detection confidence
             if (!confidences.empty() && i < confidences.size()) {
                 newTracker.detectionConfidence = confidences[i];
+            }
+
+            // Seed ReID embedding so appearance matching works from the next frame
+            if (config.useReId && i < features.size() && !features[i].empty()) {
+                newTracker.featureEmbedding = features[i].clone();
             }
 
             newTracker.color = generateRandomColor();
@@ -788,15 +818,53 @@ std::vector<IObjectTracker::TrackedResult> KalmanIoUByteTrack::update(const std:
         // detections with confidence <= kLowConfidenceFloor are ignored
     }
 
-    // Stage 1: High-confidence association (allows new trackers)
-    updateTrackersWithHungarian(highConfRects, highConfidences, -1.0f, true, false, highConfFeatures);
+    // Stage 1: High-confidence association (new trackers deferred until after
+    // LOST recovery so a reappearing object keeps its old ID)
+    std::vector<bool> matchedHigh;
+    updateTrackersWithHungarian(highConfRects, highConfidences, -1.0f, false, false,
+                                highConfFeatures, &matchedHigh);
 
-    // Stage 2: Low-confidence association (revive lost trackers only)
-    if (!lowConfRects.empty()) {
-        matchLostTrackersWithLowConfidence(lowConfRects, lowConfidences, lowConfFeatures);
+    // Stage 2: Unmatched high-confidence detections revive LOST trackers
+    // (IoU + ReID, ReID-only fallback)
+    {
+        std::vector<cv::Rect> remainingHighRects;
+        std::vector<float> remainingHighConfs;
+        std::vector<cv::Mat> remainingHighFeats;
+        std::vector<size_t> remainingHighOrigIdx;
+        remainingHighRects.reserve(highConfRects.size());
+        remainingHighConfs.reserve(highConfidences.size());
+        remainingHighFeats.reserve(highConfFeatures.size());
+        remainingHighOrigIdx.reserve(highConfRects.size());
+        for (size_t i = 0; i < highConfRects.size(); ++i) {
+            if (i < matchedHigh.size() && matchedHigh[i]) {
+                continue;
+            }
+            remainingHighRects.push_back(highConfRects[i]);
+            if (i < highConfidences.size()) remainingHighConfs.push_back(highConfidences[i]);
+            if (i < highConfFeatures.size()) remainingHighFeats.push_back(highConfFeatures[i]);
+            remainingHighOrigIdx.push_back(i);
+        }
+        if (!remainingHighRects.empty()) {
+            std::vector<bool> revived = matchLostTrackers(
+                remainingHighRects, remainingHighConfs, remainingHighFeats);
+            for (size_t k = 0; k < revived.size(); ++k) {
+                if (revived[k]) {
+                    matchedHigh[remainingHighOrigIdx[k]] = true;
+                }
+            }
+        }
     }
 
-    // Final cleanup after both stages
+    // Stage 3: Low-confidence association (revive remaining lost trackers)
+    if (!lowConfRects.empty()) {
+        matchLostTrackers(lowConfRects, lowConfidences, lowConfFeatures);
+    }
+
+    // Stage 4: Open new IDs only for high-confidence detections that matched
+    // neither an active nor a LOST tracker
+    addNewTrackers(highConfRects, matchedHigh, highConfidences, highConfFeatures);
+
+    // Final cleanup after all stages
     removeLostTrackers();
 
     // Convert internal trackers to TrackedResult format

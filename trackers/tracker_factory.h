@@ -9,6 +9,7 @@
 #include "kalman_iou/kalman_iou_tracker_6state.h"
 #include "kalman_iou/kalman_iou_tracker.h"
 #include "kalman_iou/kalman_iou_byte_track.h"
+#include "bot_sort/bot_sort_tracker.h"
 
 /**
  * @file tracker_factory.h
@@ -75,7 +76,19 @@ enum class TrackerType {
      * - Config: iouThreshold=0.25, highConfThreshold=0.6, lowConfFloor=0.1
      * - Use case: Best for occluded/low-confidence detections
      */
-    BYTETRACK
+    BYTETRACK,
+
+    /**
+     * @brief BoT-SORT: ByteTrack + Camera Motion Compensation (CMC)
+     *
+     * Extends ByteTrack with sparse optical flow CMC to compensate for global
+     * camera motion (pan, tilt, zoom) before Hungarian matching.
+     * - State: 8-state [x,y,w,h,vx,vy,vw,vh]
+     * - CMC: goodFeaturesToTrack + LK optical flow + RANSAC affine estimation
+     * - Stage 1/2: same two-stage association as ByteTrack
+     * - Use case: Moving cameras, sequences with significant background motion
+     */
+    BOT_SORT
 };
 
 /**
@@ -91,7 +104,62 @@ public:
      * @throws std::invalid_argument if type is invalid
      */
     static std::unique_ptr<IObjectTracker> create(TrackerType type) {
+        if (type == TrackerType::BOT_SORT) {
+            return std::make_unique<BotSortTracker>(BotSortConfig{});
+        }
         return create(type, KalmanIoUConfig());
+    }
+
+    /**
+     * @brief Create a BoT-SORT tracker with a BotSortConfig.
+     */
+    static std::unique_ptr<IObjectTracker> createBotSort(const BotSortConfig& config) {
+        return std::make_unique<BotSortTracker>(config);
+    }
+
+    /**
+     * @brief Get the default BotSortConfig.
+     */
+    static BotSortConfig getBotSortDefaultConfig() {
+        return BotSortConfig{};
+    }
+
+    /**
+     * @brief Translate KalmanIoUConfig into an equivalent BotSortConfig.
+     *
+     * Field names and IoUType ordinals are identical between the two structs;
+     * CMC-specific fields keep their BotSortConfig defaults. This allows
+     * callers using the shared KalmanIoUConfig path (main.cpp, tools) to
+     * configure BOT_SORT without knowing about BotSortConfig.
+     */
+    static BotSortConfig toBotSortConfig(const KalmanIoUConfig& c) {
+        BotSortConfig b;
+        b.iouType             = static_cast<BotSortConfig::IoUType>(
+                                    static_cast<int>(c.iouType));
+        b.iouThreshold        = c.iouThreshold;
+        b.usePredictionInLost = c.usePredictionInLost;
+        b.maxLostFrames       = c.maxLostFrames;
+        b.removeOutOfBounds   = c.removeOutOfBounds;
+        b.cameraBounds        = c.cameraBounds;
+        b.lostStateThreshold  = c.lostStateThreshold;
+        b.processNoise        = c.processNoise;
+        b.measurementNoise    = c.measurementNoise;
+        b.errorCovPost        = c.errorCovPost;
+        b.maxTrajectoryLength = c.maxTrajectoryLength;
+        b.softIoUSlack        = c.softIoUSlack;
+        b.alphaIoUExponent    = c.alphaIoUExponent;
+        b.minBBoxWidth        = c.minBBoxWidth;
+        b.minBBoxHeight       = c.minBBoxHeight;
+        b.maxBBoxWidth        = c.maxBBoxWidth;
+        b.maxBBoxHeight       = c.maxBBoxHeight;
+        b.sizeVelocityClamp   = c.sizeVelocityClamp;
+        b.highConfThreshold   = c.highConfThreshold;
+        b.lowConfFloor        = c.lowConfFloor;
+        b.lowConfIouThreshold = c.lowConfIouThreshold;
+        b.useReId             = c.useReId;
+        b.reidAlpha           = c.reidAlpha;
+        b.featureEmaDecay     = c.featureEmaDecay;
+        return b;
     }
 
     /**
@@ -127,6 +195,12 @@ public:
                 return tracker;
             }
 
+            case TrackerType::BOT_SORT: {
+                // BOT_SORT uses BotSortConfig internally; translate the shared
+                // KalmanIoUConfig so cameraBounds, thresholds etc. are honored.
+                return std::make_unique<BotSortTracker>(toBotSortConfig(config));
+            }
+
             default:
                 throw std::invalid_argument("Invalid tracker type");
         }
@@ -146,6 +220,8 @@ public:
                 return "8state";
             case TrackerType::BYTETRACK:
                 return "bytetrack";
+            case TrackerType::BOT_SORT:
+                return "botsort";
             default:
                 return "unknown";
         }
@@ -165,6 +241,8 @@ public:
                 return "Kalman 8-state [x,y,w,h,vx,vy,vw,vh] - Adaptive noise (BoT-SORT)";
             case TrackerType::BYTETRACK:
                 return "ByteTrack 8-state - Two-stage matching (high/low confidence)";
+            case TrackerType::BOT_SORT:
+                return "BoT-SORT: ByteTrack + Camera Motion Compensation (CMC)";
             default:
                 return "Unknown tracker type";
         }
@@ -196,6 +274,11 @@ public:
                 // Note: ByteTrack-specific thresholds (0.6, 0.1) are
                 // hardcoded in KalmanIoUByteTrack::update()
                 break;
+
+            case TrackerType::BOT_SORT:
+                config.iouThreshold = 0.25f;
+                config.maxLostFrames = 30;
+                break;
         }
 
         return config;
@@ -211,8 +294,13 @@ public:
      * @param config  Configuration to apply
      */
     static void applyConfig(IObjectTracker* tracker, const KalmanIoUConfig& config) {
-        if (auto* c = dynamic_cast<IConfigurableTracker<KalmanIoUConfig>*>(tracker))
+        if (auto* c = dynamic_cast<IConfigurableTracker<KalmanIoUConfig>*>(tracker)) {
             c->setConfig(config);
+        } else if (auto* b = dynamic_cast<IConfigurableTracker<BotSortConfig>*>(tracker)) {
+            // BotSortTracker uses its own config type; translate shared fields
+            // and preserve CMC defaults.
+            b->setConfig(toBotSortConfig(config));
+        }
     }
 
     /**
@@ -237,6 +325,9 @@ public:
             t->setTelemetry(telemetry);
             t->setFrameSizeHint(sourceSize, processedSize);
         } else if (auto* t = dynamic_cast<KalmanIoUByteTrack*>(tracker)) {
+            t->setTelemetry(telemetry);
+            t->setFrameSizeHint(sourceSize, processedSize);
+        } else if (auto* t = dynamic_cast<BotSortTracker*>(tracker)) {
             t->setTelemetry(telemetry);
             t->setFrameSizeHint(sourceSize, processedSize);
         }

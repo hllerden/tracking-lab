@@ -12,26 +12,26 @@ from dataclasses import dataclass, field
 # Predefined metric groups (class-level constant)
 METRIC_GROUPS: Dict[str, List[str]] = {
     'primary': [
-        'HOTA(0)',      # Higher Order Tracking Accuracy (overall)
+        'HOTA___AUC',   # Higher Order Tracking Accuracy (averaged over thresholds)
         'MOTA',         # Multiple Object Tracking Accuracy
         'IDF1',         # ID F1 Score
     ],
     'detection': [
-        'DetA(0)',      # Detection Accuracy (overall)
-        'DetRe(0)',     # Detection Recall (at threshold 0)
-        'DetPr(0)',     # Detection Precision (at threshold 0)
+        'DetA___AUC',   # Detection Accuracy (averaged over thresholds)
+        'DetRe___AUC',  # Detection Recall (averaged over thresholds)
+        'DetPr___AUC',  # Detection Precision (averaged over thresholds)
         'CLR_Re',       # CLEAR Recall
         'CLR_Pr',       # CLEAR Precision
     ],
     'association': [
-        'AssA(0)',      # Association Accuracy (overall)
-        'AssRe(0)',     # Association Recall
-        'AssPr(0)',     # Association Precision
+        'AssA___AUC',   # Association Accuracy (averaged over thresholds)
+        'AssRe___AUC',  # Association Recall (averaged over thresholds)
+        'AssPr___AUC',  # Association Precision (averaged over thresholds)
         'IDR',          # ID Recall
         'IDP',          # ID Precision
     ],
     'localization': [
-        'LocA(0)',      # Localization Accuracy
+        'LocA___AUC',   # Localization Accuracy (averaged over thresholds)
         'MOTP',         # Multiple Object Tracking Precision
     ],
     'counts': [
