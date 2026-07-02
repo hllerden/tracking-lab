@@ -405,6 +405,9 @@ void KalmanIoUByteTrack::updateTrackersWithHungarian(const std::vector<cv::Rect>
                     trackers[i].featureEmbedding =
                         config.featureEmaDecay * trackers[i].featureEmbedding
                         + (1.0 - config.featureEmaDecay) * newFeat;
+                    cv::normalize(trackers[i].featureEmbedding,
+                                  trackers[i].featureEmbedding,
+                                  1.0, 0.0, cv::NORM_L2);
                 }
             }
 
@@ -548,6 +551,9 @@ void KalmanIoUByteTrack::matchLostTrackersWithLowConfidence(const std::vector<cv
                 trackers[trackerIndex].featureEmbedding =
                     config.featureEmaDecay * trackers[trackerIndex].featureEmbedding
                     + (1.0 - config.featureEmaDecay) * newFeat;
+                cv::normalize(trackers[trackerIndex].featureEmbedding,
+                              trackers[trackerIndex].featureEmbedding,
+                              1.0, 0.0, cv::NORM_L2);
             }
         }
 
@@ -561,7 +567,6 @@ void KalmanIoUByteTrack::matchLostTrackersWithLowConfidence(const std::vector<cv
         }
 
         matchedDetections[detIdx] = true;
-        std::cout << "[LOWCONF MATCH] Tracker " << trackers[trackerIndex].id << " revived." << std::endl;
     }
 }
 

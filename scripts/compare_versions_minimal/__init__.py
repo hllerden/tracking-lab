@@ -24,6 +24,12 @@ Usage:
     results = comparator.get_summary()
 """
 
+import os
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+os.environ.setdefault('MPLCONFIGDIR', str(_REPO_ROOT / 'output' / '.matplotlib'))
+
 from .comparator import TrackEvalComparator
 from .config import (
     MetricsConfig,
@@ -32,7 +38,6 @@ from .config import (
     DETECTION_CONFIG,
     ASSOCIATION_CONFIG
 )
-from .visualizer import ChartGenerator
 from .reporter import ReportGenerator
 from .utils import (
     find_report_file,
@@ -47,6 +52,15 @@ from .utils import (
 
 __version__ = '1.0.0'
 __author__ = 'opencv-yolo project'
+
+
+def __getattr__(name):
+    if name == 'ChartGenerator':
+        from .visualizer import ChartGenerator
+        return ChartGenerator
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 __all__ = [
     'TrackEvalComparator',
     'MetricsConfig',

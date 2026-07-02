@@ -84,6 +84,7 @@ MOT17-Data/
 output/v*/
 output/reports/
 output/comparison/
+output/.matplotlib/
 output/*.txt
 output/*.log
 

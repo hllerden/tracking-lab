@@ -148,7 +148,7 @@ class ReportGenerator:
 
     def _print_key_metrics_table(self, summary: Dict):
         """Print key metrics comparison table using Rich."""
-        key_metrics = ['HOTA(0)', 'MOTA', 'IDF1']
+        key_metrics = ['HOTA___AUC', 'MOTA', 'IDF1']
 
         table = Table(title="Key Metrics (COMBINED)", box=box.ROUNDED, show_header=True)
         table.add_column("Metric", style="cyan", width=20)
@@ -193,7 +193,7 @@ class ReportGenerator:
 
     def _print_key_metrics_plain(self, summary: Dict):
         """Print key metrics in plain text format."""
-        key_metrics = ['HOTA(0)', 'MOTA', 'IDF1']
+        key_metrics = ['HOTA___AUC', 'MOTA', 'IDF1']
 
         print("\nKey Metrics (COMBINED):")
         print(f"{'Metric':<15} {summary['version1']:<12} {summary['version2']:<12} {'Delta':<12} {'Change (%)':<12}")
@@ -201,6 +201,9 @@ class ReportGenerator:
 
         for metric in key_metrics:
             v1_key = f'{metric}_v1'
+            v2_key = f'{metric}_v2'
+            delta_key = f'{metric}_delta'
+            pct_key = f'{metric}_delta_pct'
             if v1_key in summary:
                 v1_val = summary[v1_key]
                 v2_val = summary[v2_key]
@@ -311,7 +314,7 @@ class ReportGenerator:
         if output_file:
             with open(output_file, 'w') as f:
                 json.dump(summary, f, indent=2)
-            print(f"✓ Saved JSON report: {output_file}")
+            print(f"✓ Saved JSON report: {output_file.resolve()}")
 
         return summary
 
@@ -342,7 +345,7 @@ class ReportGenerator:
         with open(output_file, 'w') as f:
             f.write(html_content)
 
-        print(f"✓ Saved HTML report: {output_file}")
+        print(f"✓ Saved HTML report: {output_file.resolve()}")
 
     def _embed_image_as_base64(self, image_path: Path) -> Optional[str]:
         """

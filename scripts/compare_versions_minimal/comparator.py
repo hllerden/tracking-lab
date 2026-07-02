@@ -302,7 +302,7 @@ class TrackEvalComparator:
         }
 
         # Add key metric comparisons from COMBINED row
-        key_metrics = ['HOTA(0)', 'MOTA', 'IDF1']
+        key_metrics = ['HOTA___AUC', 'MOTA', 'IDF1']
         for metric in key_metrics:
             if metric in combined['metric'].values:
                 row = combined[combined['metric'] == metric].iloc[0]

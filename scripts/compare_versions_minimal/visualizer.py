@@ -13,6 +13,12 @@ import warnings
 
 # Import visualization libraries with graceful fallback
 try:
+    warnings.filterwarnings(
+        "ignore",
+        message="Unable to import Axes3D.*",
+        category=UserWarning,
+        module="matplotlib.projections"
+    )
     import matplotlib.pyplot as plt
     import matplotlib.patches as mpatches
     from matplotlib.gridspec import GridSpec
@@ -318,12 +324,16 @@ class ChartGenerator:
         Returns:
             matplotlib Figure object
         """
-        # Filter for COMBINED sequence
-        combined = self.comparison_df[self.comparison_df['sequence'] == 'COMBINED']
+        # Filter for COMBINED sequence and normalize direction so positive is good.
+        combined = self.comparison_df[self.comparison_df['sequence'] == 'COMBINED'].copy()
+        combined['improvement_pct'] = combined.apply(
+            lambda row: row['delta_pct'] if is_higher_better(row['metric']) else -row['delta_pct'],
+            axis=1
+        )
 
         # Get top improvements and regressions
-        improvements = combined.nlargest(top_n, 'delta_pct')
-        regressions = combined.nsmallest(top_n, 'delta_pct')
+        improvements = combined.nlargest(top_n, 'improvement_pct')
+        regressions = combined.nsmallest(top_n, 'improvement_pct')
 
         # Create figure with two subplots
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
@@ -331,7 +341,7 @@ class ChartGenerator:
         # Top improvements
         if not improvements.empty:
             metrics_imp = [get_metric_display_name(m).split('(')[0] for m in improvements['metric']]
-            values_imp = improvements['delta_pct'].values
+            values_imp = improvements['improvement_pct'].values
 
             bars1 = ax1.barh(range(len(metrics_imp)), values_imp, color=self.color_improvement)
             ax1.set_yticks(range(len(metrics_imp)))
@@ -347,7 +357,7 @@ class ChartGenerator:
         # Top regressions
         if not regressions.empty:
             metrics_reg = [get_metric_display_name(m).split('(')[0] for m in regressions['metric']]
-            values_reg = regressions['delta_pct'].values
+            values_reg = regressions['improvement_pct'].values
 
             bars2 = ax2.barh(range(len(metrics_reg)), values_reg, color=self.color_regression)
             ax2.set_yticks(range(len(metrics_reg)))
@@ -372,7 +382,7 @@ class ChartGenerator:
 
     def save_all_charts(
         self,
-        primary_metrics: List[str] = ['HOTA(0)', 'MOTA', 'IDF1'],
+        primary_metrics: List[str] = ['HOTA___AUC', 'MOTA', 'IDF1'],
         sequences: Optional[List[str]] = None
     ):
         """

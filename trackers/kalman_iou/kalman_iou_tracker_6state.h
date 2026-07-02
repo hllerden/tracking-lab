@@ -14,15 +14,15 @@
 #include <vector>
 
 /**
- * @file kalman_iou_tracker.h
- * @brief Kalman Filter + IoU-based object tracker
+ * @file kalman_iou_tracker_6state.h
+ * @brief Kalman Filter + IoU-based object tracker (6-state)
  * @author Halil Erden
  * @date 17.10.2025
  *
- * This tracker combines Kalman filtering for motion prediction with
- * various IoU metrics for detection-to-track association. It supports
- * multiple IoU variants (IOU, GIOU, DIOU, CIOU, SIOU, AIOU) and uses
- * the Hungarian algorithm for optimal matching.
+ * @deprecated This tracker is superseded by KalmanIoUByteTrack which implements
+ *             the full ByteTrack two-stage association pipeline with optional ReID
+ *             support. KalmanIoUTracker6State will not receive further development.
+ *             Existing call sites are preserved for backward compatibility.
  */
 
 /**
@@ -90,7 +90,7 @@ struct KalmanIoUConfig {
  * @brief Internal tracked object representation for 6-state tracker
  * This is Kalman-specific and not exposed through IObjectTracker interface
  */
-namespace KalmanIoU6State {
+namespace [[deprecated("KalmanIoU6State is superseded by KalmanIoUByteTrackNS")]] KalmanIoU6State {
 struct TrackedObject {
     enum State {
         TRACKING,   ///< Active tracking
@@ -120,7 +120,8 @@ struct TrackedObject {
  * - IVisualTracker: Drawing and trajectory visualization
  * - IConfigurableTracker: Runtime configuration
  */
-class KalmanIoUTracker6State : public IObjectTracker,
+class [[deprecated("KalmanIoUTracker6State is superseded by KalmanIoUByteTrack; do not use in new code")]]
+KalmanIoUTracker6State : public IObjectTracker,
                          public IVisualTracker,
                          public IConfigurableTracker<KalmanIoUConfig> {
 public:

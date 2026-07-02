@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 
 # ==================== PROJECT VERSION ====================
 set(PROJECT_VERSION_MAJOR 1)
-set(PROJECT_VERSION_MINOR 0)
-set(PROJECT_VERSION_PATCH 10)
+set(PROJECT_VERSION_MINOR 1)
+set(PROJECT_VERSION_PATCH 0)
 set(PROJECT_VERSION "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}")
 
 project(yoloExercise VERSION ${PROJECT_VERSION} LANGUAGES CXX)
@@ -129,6 +129,10 @@ add_executable(yoloExercise
   trackers/kalman_iou/kalman_iou_tracker_6state.h
   trackers/kalman_iou/kalman_iou_tracker_6state.cpp
 
+  trackers/bot_sort/bot_sort_config.h
+  trackers/bot_sort/cmc_module.h trackers/bot_sort/cmc_module.cpp
+  trackers/bot_sort/bot_sort_tracker.h trackers/bot_sort/bot_sort_tracker.cpp
+
 )
 target_link_libraries(yoloExercise ${OpenCV_LIBS} Eigen3::Eigen)
 
@@ -157,6 +161,9 @@ add_executable(mot17_tracking_mp4
   trackers/kalman_iou/kalman_iou_byte_track.h trackers/kalman_iou/kalman_iou_byte_track.cpp
   trackers/kalman_iou/kalman_iou_tracker_6state.h trackers/kalman_iou/kalman_iou_tracker_6state.cpp
   trackers/helpers/HungarianAlgorithm.h trackers/helpers/HungarianAlgorithm.cpp
+  trackers/bot_sort/bot_sort_config.h
+  trackers/bot_sort/cmc_module.h trackers/bot_sort/cmc_module.cpp
+  trackers/bot_sort/bot_sort_tracker.h trackers/bot_sort/bot_sort_tracker.cpp
   i_object_tracker.h
   i_visual_tracker.h
   i_configurable_tracker.h
